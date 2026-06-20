@@ -82,9 +82,18 @@ const Navbar: React.FC<NavbarProps> = ({
                 window.scrollTo({ top: 0, behavior: 'smooth' });
                 onNavClick(e, ''); // Pass empty string to just reset to home
             }}
-            className={`text-3xl font-serif font-medium tracking-tight z-50 relative transition-colors duration-500 ${textColorClass}`}
+            className={`flex items-center gap-3 text-3xl font-serif font-medium tracking-tight z-50 relative transition-colors duration-500 ${textColorClass}`}
           >
-            {BRAND_NAME}
+            <img 
+              src="/logo.png" 
+              alt="Nami Logo" 
+              className="w-8 h-8 object-contain transition-all duration-500" 
+              style={{ 
+                mixBlendMode: scrolled || mobileMenuOpen ? 'multiply' : 'screen',
+                filter: scrolled || mobileMenuOpen ? 'none' : 'brightness(0) invert(1)'
+              }} 
+            />
+            <span>{BRAND_NAME}</span>
           </a>
           
           {/* Center Links - Desktop */}

@@ -47,7 +47,15 @@ const Footer: React.FC<FooterProps> = ({ onLinkClick }) => {
       <div className="max-w-[1800px] mx-auto grid grid-cols-1 md:grid-cols-12 gap-12">
         
         <div className="md:col-span-4">
-          <h4 className="text-2xl font-serif text-[#2C2A26] mb-6">Nami</h4>
+          <div className="flex items-center gap-2.5 mb-6">
+            <img 
+              src="/logo.png" 
+              alt="Nami Logo" 
+              className="w-7 h-7 object-contain" 
+              style={{ mixBlendMode: 'multiply' }} 
+            />
+            <h4 className="text-2xl font-serif text-[#2C2A26]">Nami</h4>
+          </div>
           <p className="max-w-xs font-light leading-relaxed">
             Designing technology that feels as natural as the world around it.
             Born from the earth, built for the mind.
