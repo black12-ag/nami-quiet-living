@@ -4,6 +4,9 @@
 > 
 > *Technology should not feel like technology. It should feel like a stone smoothed by a river, or a page turned in a book.*
 
+[Live Demo](https://nami.ethio-viral.com)
+
+
 ---
 
 ## Brand Philosophy
