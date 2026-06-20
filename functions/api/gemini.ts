@@ -1,5 +1,3 @@
-import { GoogleGenAI, Type } from "@google/genai";
-
 const PRODUCTS_METADATA = [
   { id: 'p1', name: 'Nami Harmony', price: 429, tagline: 'Listen naturally.', description: 'Audio that feels like the open air. Constructed with warm acoustic fabric and recycled sandstone composite.', features: ['Organic Noise Cancellation', '50h Battery', 'Natural Soundstage'] },
   { id: 'p2', name: 'Nami Epoch', price: 349, tagline: 'Moments, not minutes.', description: 'A timepiece designed for wellness. Ceramic casing with a strap made from sustainable vegan leather.', features: ['Stress Monitoring', 'E-Ink Hybrid Display', '7-Day Battery'] },
@@ -12,24 +10,15 @@ const PRODUCTS_METADATA = [
 export async function onRequestPost(context: any) {
   try {
     const { env, request } = context;
-    const key = env.GEMINI_API_KEY;
+    const key = env.GROQ_API_KEY || env.GEMINI_API_KEY;
     if (!key) {
-      return new Response(JSON.stringify({ error: "GEMINI_API_KEY environment variable is not set." }), {
+      return new Response(JSON.stringify({ error: "GROQ_API_KEY / GEMINI_API_KEY environment variable is not set." }), {
         status: 500,
         headers: { "Content-Type": "application/json" }
       });
     }
 
     const { history, message } = await request.json();
-
-    const ai = new GoogleGenAI({ apiKey: key });
-
-    const formattedHistory = Array.isArray(history) 
-      ? history.map((h: any) => ({
-          role: h.role === 'assistant' ? 'model' : h.role,
-          parts: [{ text: h.text || h.parts?.[0]?.text || '' }]
-        }))
-      : [];
 
     const productDescriptions = PRODUCTS_METADATA.map(p => 
       `- ID: ${p.id} | Name: ${p.name} ($${p.price}): ${p.description}. Features: ${p.features.join(', ')}`
@@ -56,68 +45,70 @@ Your unique abilities:
 7. ASK them for any missing billing/shipping credentials gracefully (e.g., "What name and email should we address this to?") if they say they want to buy but haven't provided details. You can also directly trigger the checkout screen with the prefilled fields.
 8. VIEW order history or VIEW a specific product detailed card.
 
-You MUST respond in JSON matching the exact schema below. Keep your verbal voice warm, reassuring, and highly elegant.`;
+You MUST respond in a valid JSON object matching the exact schema below. Keep your verbal voice warm, reassuring, and highly elegant.
 
-    const schema = {
-      type: Type.OBJECT,
-      properties: {
-        text: {
-          type: Type.STRING,
-          description: "Conversational response for the customer. Warm, high-end tone. Use formatting to make it beautiful."
+JSON Response Schema:
+{
+  "text": "Your warm, elegant, high-end conversational response. (markdown supported)",
+  "actions": [
+    {
+      "type": "ADD_TO_CART" | "GO_TO_CHECKOUT" | "VIEW_PRODUCT" | "VIEW_ORDERS" | "APPLY_PROMO" | "NONE",
+      "payload": {
+        "productId": "p1" | "p2" | "p3" | "p4" | "p5" | "p6",
+        "prefill": {
+          "email": "string (optional)",
+          "firstName": "string (optional)",
+          "lastName": "string (optional)",
+          "address": "string (optional)",
+          "city": "string (optional)",
+          "postalCode": "string (optional)"
         },
-        actions: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              type: {
-                type: Type.STRING,
-                description: "The action to execute: 'ADD_TO_CART', 'GO_TO_CHECKOUT', 'VIEW_PRODUCT', 'VIEW_ORDERS', 'APPLY_PROMO', 'NONE'."
-              },
-              payload: {
-                type: Type.OBJECT,
-                properties: {
-                  productId: {
-                    type: Type.STRING,
-                    description: "The product ID (MUST be one of: 'p1', 'p2', 'p3', 'p4', 'p5', 'p6'). Required for ADD_TO_CART or VIEW_PRODUCT."
-                  },
-                  prefill: {
-                    type: Type.OBJECT,
-                    properties: {
-                      email: { type: Type.STRING, description: "Extracted customer email coordinate if given." },
-                      firstName: { type: Type.STRING, description: "Extracted customer first name if given." },
-                      lastName: { type: Type.STRING, description: "Extracted customer last name if given." },
-                      address: { type: Type.STRING, description: "Extracted customer relative address if given." },
-                      city: { type: Type.STRING, description: "Extracted delivery city if given." },
-                      postalCode: { type: Type.STRING, description: "Extracted postal zip code if given." }
-                    }
-                  },
-                  promoCode: {
-                    type: Type.STRING,
-                    description: "Extracted active coupon code (must be one of: 'NAMI10', 'SERENE20', 'SPRING50')."
-                  }
-                }
-              }
-            },
-            required: ["type"]
-          }
-        }
-      },
-      required: ["text", "actions"]
-    };
+        "promoCode": "NAMI10" | "SERENE20" | "SPRING50"
+      }
+    }
+  ]
+}`;
 
-    const chat = ai.chats.create({
-      model: 'gemini-3.5-flash',
-      config: {
-        systemInstruction: systemPrompt,
-        responseMimeType: 'application/json',
-        responseSchema: schema
+    const messages: any[] = [];
+    messages.push({ role: "system", content: systemPrompt });
+
+    if (Array.isArray(history)) {
+      for (const h of history) {
+        messages.push({
+          role: h.role === "model" || h.role === "assistant" ? "assistant" : "user",
+          content: h.text || h.parts?.[0]?.text || ""
+        });
+      }
+    }
+
+    messages.push({ role: "user", content: message });
+
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${key}`,
+        "Content-Type": "application/json"
       },
-      history: formattedHistory
+      body: JSON.stringify({
+        model: "llama-3.3-70b-versatile",
+        messages: messages,
+        response_format: { type: "json_object" },
+        temperature: 0.2
+      })
     });
 
-    const result = await chat.sendMessage({ message: message });
-    return new Response(result.text || "{}", {
+    if (!response.ok) {
+      const errorText = await response.text();
+      return new Response(JSON.stringify({ error: `Groq API returned ${response.status}: ${errorText}` }), {
+        status: response.status,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    const data: any = await response.json();
+    const responseText = data.choices[0].message.content;
+
+    return new Response(responseText, {
       headers: { "Content-Type": "application/json" }
     });
   } catch (error: any) {

@@ -1,5 +1,3 @@
-import { GoogleGenAI, Type } from "@google/genai";
-
 const PRODUCTS_METADATA = [
   { id: 'p1', name: 'Nami Harmony', price: 429, tagline: 'Listen naturally.', description: 'Audio that feels like the open air. Constructed with warm acoustic fabric and recycled sandstone composite.', features: ['Organic Noise Cancellation', '50h Battery', 'Natural Soundstage'] },
   { id: 'p2', name: 'Nami Epoch', price: 349, tagline: 'Moments, not minutes.', description: 'A timepiece designed for wellness. Ceramic casing with a strap made from sustainable vegan leather.', features: ['Stress Monitoring', 'E-Ink Hybrid Display', '7-Day Battery'] },
@@ -12,9 +10,9 @@ const PRODUCTS_METADATA = [
 export async function onRequestPost(context: any) {
   try {
     const { env, request } = context;
-    const key = env.GEMINI_API_KEY;
+    const key = env.GROQ_API_KEY || env.GEMINI_API_KEY;
     if (!key) {
-      return new Response(JSON.stringify({ error: "GEMINI_API_KEY environment variable is not set." }), {
+      return new Response(JSON.stringify({ error: "GROQ_API_KEY / GEMINI_API_KEY environment variable is not set." }), {
         status: 500,
         headers: { "Content-Type": "application/json" }
       });
@@ -28,8 +26,6 @@ export async function onRequestPost(context: any) {
       });
     }
 
-    const ai = new GoogleGenAI({ apiKey: key });
-
     const productContext = PRODUCTS_METADATA.map(p => 
       `- ID: ${p.id} | Name: ${p.name} ($${p.price}): ${p.description}. Features: ${p.features.join(', ')}`
     ).join('\n');
@@ -42,45 +38,50 @@ ${productContext}
 
 Select between 1 to 3 products that align beautifully with their intent.
 Provide a short, elegant, custom reason for why each selected product is perfect for them (1-2 lines), keeping Nami's peaceful and sophisticated brand voice. Raise recommendations based on features.
-Return the result structured in JSON matching the exact schema specified. Keep the conversational intro and outro warm and reassuring in "conciergeFeedback".`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: `Customer desires: "${userQuery}"`,
-      config: {
-        systemInstruction: systemPrompt,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            recommendations: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  productId: {
-                    type: Type.STRING,
-                    description: "The product ID matching the recommendation (MUST be one of: 'p1', 'p2', 'p3', 'p4', 'p5', 'p6').",
-                  },
-                  reason: {
-                    type: Type.STRING,
-                    description: "Tailored explanation of why this matches their specific query in 1-2 sophisticated sentences.",
-                  }
-                },
-                required: ["productId", "reason"]
-              }
-            },
-            conciergeFeedback: {
-              type: Type.STRING,
-              description: "A refined greeting or context synthesis reflecting on how these recommendations align with their intent and Nami's philosophy.",
-            }
-          },
-          required: ["recommendations", "conciergeFeedback"]
-        }
-      }
+You MUST respond in a valid JSON object matching the exact schema below.
+
+JSON Response Schema:
+{
+  "recommendations": [
+    {
+      "productId": "p1" | "p2" | "p3" | "p4" | "p5" | "p6",
+      "reason": "Tailored explanation of why this matches their specific query in 1-2 sophisticated sentences."
+    }
+  ],
+  "conciergeFeedback": "A refined greeting or context synthesis reflecting on how these recommendations align with their intent and Nami's philosophy."
+}`;
+
+    const messages = [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: `Customer desires: "${userQuery}"` }
+    ];
+
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${key}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "llama-3.3-70b-versatile",
+        messages: messages,
+        response_format: { type: "json_object" },
+        temperature: 0.2
+      })
     });
 
-    const responseText = response.text || "{}";
+    if (!response.ok) {
+      const errorText = await response.text();
+      return new Response(JSON.stringify({ error: `Groq API returned ${response.status}: ${errorText}` }), {
+        status: response.status,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    const data: any = await response.json();
+    const responseText = data.choices[0].message.content;
+
     return new Response(responseText, {
       headers: { "Content-Type": "application/json" }
     });
